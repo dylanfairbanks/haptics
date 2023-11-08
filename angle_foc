@@ -1,3 +1,5 @@
+// Angle Sensor working with Sparkfun IoT Motor https://www.sparkfun.com/products/22132
+
 #include <SimpleFOC.h>
 #include <Wire.h>            // Used to establish serial communication on the I2C bus
 #include "SparkFun_TMAG5273_Arduino_Library.h" // Used to send and recieve specific information from our sensor
@@ -10,9 +12,10 @@ uint8_t magneticChannel = TMAG5273_XYX_ENABLE;              // use XY plane
 uint8_t angleCalculation = TMAG5273_XY_ANGLE_CALCULATION;   // use XY angle calculation
 
 float readMySensorCallback() {
+  float angleCalculation = 0.0f;
   // Checks if mag channels are on - turns on in setup
   if((raw_sensor.getMagneticChannel() != 0) && (raw_sensor.getAngleEn() != 0)) { 
-    float angleCalculation = raw_sensor.getAngleResult();
+    angleCalculation = raw_sensor.getAngleResult();
     Serial.print(angleCalculation, 2); Serial.print("\t");
   }
   else {
