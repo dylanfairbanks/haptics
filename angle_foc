@@ -1,0 +1,65 @@
+#include <SimpleFOC.h>
+#include <Wire.h>            // Used to establish serial communication on the I2C bus
+#include "SparkFun_TMAG5273_Arduino_Library.h" // Used to send and recieve specific information from our sensor
+
+TMAG5273 raw_sensor;  // motor magnetic sense
+
+uint8_t i2cAddress = TMAG5273_I2C_ADDRESS_INITIAL;          // use default address
+uint8_t conversionAverage = TMAG5273_X32_CONVERSION;        // use 32x averaging 
+uint8_t magneticChannel = TMAG5273_XYX_ENABLE;              // use XY plane
+uint8_t angleCalculation = TMAG5273_XY_ANGLE_CALCULATION;   // use XY angle calculation
+
+float readMySensorCallback() {
+  // Checks if mag channels are on - turns on in setup
+  if((raw_sensor.getMagneticChannel() != 0) && (raw_sensor.getAngleEn() != 0)) { 
+    float angleCalculation = raw_sensor.getAngleResult();
+    Serial.print(angleCalculation, 2); Serial.print("\t");
+  }
+  else {
+    Serial.println("Mag Channels disabled, stopping..");
+    while(1);
+  }
+  return (angleCalculation * 3.141529 / 180.0);
+}
+
+void initMySensorCallback() {
+
+  Wire.begin(); // for magnetic sensor
+  
+  // If begin is successful (0), then start example
+  if(raw_sensor.begin(i2cAddress, Wire) == true) {    
+    Serial.println("Begin");
+  }
+  // Otherwise, infinite loop
+  else {    
+    Serial.println("Device failed to setup - Freezing code.");
+    while(1); // Runs forever
+  }
+  
+  raw_sensor.setConvAvg(conversionAverage);       // Set the device at 32x average mode 
+  raw_sensor.setMagneticChannel(magneticChannel); // Set calculation plane
+  raw_sensor.setAngleEn(angleCalculation);        // enable angle calculation
+}
+
+GenericSensor sensor = GenericSensor(readMySensorCallback, initMySensorCallback); // create the sensor
+
+void setup() { 
+
+  Serial.begin(115200); // monitoring port
+
+  sensor.init(); // initialize sensor hardware
+
+  Serial.println("My sensor ready");
+
+  delay(1000);
+}
+
+void loop() {
+
+  sensor.update();  // call as frequently as possible
+
+  Serial.print(sensor.getAngle());
+  Serial.print("\t");
+  Serial.println(sensor.getVelocity());
+
+}
