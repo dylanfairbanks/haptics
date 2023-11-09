@@ -1,22 +1,227 @@
-// Angle Sensor working with Sparkfun IoT Motor https://www.sparkfun.com/products/22132
+#include <Wire.h>
+#include <SimpleFOC.h> //http://librarymanager/All#Simple%20FOC
+#include <SparkFun_TMAG5273_Arduino_Library.h> // Used to send and recieve specific information from our sensor
 
-#include <SimpleFOC.h>
-#include <Wire.h>            // Used to establish serial communication on the I2C bus
-#include "SparkFun_TMAG5273_Arduino_Library.h" // Used to send and recieve specific information from our sensor
-
-TMAG5273 raw_sensor;  // motor magnetic sense
+TMAG5273 raw_sensor;  // motor magnetic sensor
 
 uint8_t i2cAddress = TMAG5273_I2C_ADDRESS_INITIAL;          // use default address
 uint8_t conversionAverage = TMAG5273_X32_CONVERSION;        // use 32x averaging 
 uint8_t magneticChannel = TMAG5273_XYX_ENABLE;              // use XY plane
 uint8_t angleCalculation = TMAG5273_XY_ANGLE_CALCULATION;   // use XY angle calculation
 
-float readMySensorCallback() {
+float readMagSensorCallback(void);
+void initMagSensorCallback(void);
+
+GenericSensor sensor = GenericSensor(readMagSensorCallback, initMagSensorCallback); // create the sensor
+
+//GPIO
+// #define auxBtn2   13
+// #define auxBtn1   14  
+
+//driver
+#define uh16      16
+#define ul17      17
+#define vh18      18
+#define wh19      19
+#define vl23      23
+#define wl33      33
+//#define _stby    5
+
+#define curr_U    35
+#define curr_V    36
+#define curr_W    39
+
+//bool state = true;
+
+//motor driver
+BLDCMotor motor = BLDCMotor(7);
+BLDCDriver6PWM driver = BLDCDriver6PWM(uh16, ul17, vh18, vl23, wh19, wl33); //,  _stby);
+float target_velocity = 0.0;
+Commander commander = Commander(Serial);
+//void doTarget(char* cmd) { commander.scalar(&target_velocity, cmd); }
+//void doLimit(char* cmd) { commander.scalar(&motor.voltage_limit, cmd); }
+//void onMotion(char* cmd){ commander.motion(&motor,cmd); }
+void doMotor(char* cmd){ commander.motor(&motor, cmd); }
+
+// InlineCurrentSensor constructor
+//  - shunt_resistor  - shunt resistor value
+//  - gain  - current-sense op-amp gain
+//  - phA   - A phase adc pin
+//  - phB   - B phase adc pin
+//  - phC   - C phase adc pin (optional)
+InlineCurrentSense current_sense  = InlineCurrentSense(0.012, 20, curr_U, curr_V, curr_W);
+
+
+// //////////////////////motor demo stuff///////////////////////////
+// struct Button{
+//   const uint8_t PIN;
+//   uint32_t numberKeyPresses;
+//   bool pressed;
+// };
+// Button aux1 = {auxBtn1, 0, false};
+// Button aux2 = {auxBtn2, 0, false};
+
+// void IRAM_ATTR isr1(){
+//   aux1.pressed = true;
+//   target_velocity = target_velocity*(-1);
+//   Serial.println("Changing directions.. ");
+// }
+
+// void IRAM_ATTR isr2(){
+//   aux2.numberKeyPresses++;
+//   aux2.pressed = true;
+  
+//   if((aux2.numberKeyPresses % 2) == 0)
+//   {
+//     target_velocity = 0;
+//     Serial.println("Stopping motor.. ");
+//   }
+//   else
+//   {
+//     target_velocity = 5;
+//     motor.enable();
+//     Serial.println("Starting motor.. ");
+//   }
+// }
+
+
+void setup() {
+  Serial.begin(115200);
+
+  motor.useMonitoring(Serial);
+  motor.monitor_downsample = 100;
+  //motor.monitor_variables = _MON_TARGET | _MON_VOLT_Q | _MON_VOLT_D | _MON_CURR_Q | _MON_CURR_D | _MON_VEL | _MON_ANGLE; 
+
+  sensor.init();
+  motor.linkSensor(&sensor);
+
+  //motor demo stuff
+  driver.voltage_power_supply = 3.3;
+  driver.pwm_frequency = 20000;
+  driver.voltage_limit = 3.3;
+  driver.init();
+  current_sense.linkDriver(&driver);
+  motor.linkDriver(&driver);
+  motor.voltage_limit = 3.3;
+  //motor.torque_controller = TorqueControlType::foc_current;
+  motor.controller = MotionControlType::velocity;
+  motor.init();
+  motor.disable();
+  if (current_sense.init()) {
+    Serial.println("current sense init success.");
+  }
+  else {
+    Serial.println("current sense init fail. halting.");
+    while(1);
+  }
+  motor.linkCurrentSense(&current_sense);
+
+
+  // pinMode(aux1.PIN, INPUT_PULLUP); // Sets pin 14 on the ESP32 as an interrupt
+  // attachInterrupt(aux1.PIN, isr1, FALLING); // Triggers when aux1 is pulled to GND (button pressed)
+  // pinMode(aux2.PIN, INPUT_PULLUP); // Sets pin 13 on the ESP32 as an interrupt
+  // attachInterrupt(aux2.PIN, isr2, FALLING); // Triggers when aux2 is pulled to GND (button pressed)
+
+  // Q axis
+  // PID parameters - default 
+  motor.PID_current_q.P = 5;                       // 3    - Arduino UNO/MEGA
+  motor.PID_current_q.I = 300;                    // 300  - Arduino UNO/MEGA
+  motor.PID_current_q.D = 0;
+  motor.PID_current_q.limit = motor.voltage_limit; 
+  //motor.PID_current_q.ramp = 1e6;                  // 1000 - Arduino UNO/MEGA
+  // Low pass filtering - default 
+  motor.LPF_current_q.Tf= 0.01;                         // 0.01 - Arduino UNO/MEGA
+
+  // D axis
+  // PID parameters - default 
+  motor.PID_current_d.P = 5;                       // 3    - Arduino UNO/MEGA
+  motor.PID_current_d.I = 300;                    // 300  - Arduino UNO/MEGA
+  motor.PID_current_d.D = 0;
+  motor.PID_current_d.limit = motor.voltage_limit; 
+  //motor.PID_current_d.ramp = 1e6;                  // 1000 - Arduino UNO/MEGA
+  // Low pass filtering - default 
+  motor.LPF_current_d.Tf= 0.01;                         // 0.01 - Arduino UNO/MEGA
+
+
+  // controller configuration based on the control type 
+  // velocity PID controller parameters
+  // default P=0.5 I = 10 D = 0
+  motor.PID_velocity.P = 0.01;
+  motor.PID_velocity.I = 0.5;
+  motor.PID_velocity.D = 0.0;
+  // jerk control using voltage voltage ramp
+  // default value is 300 volts per sec  ~ 0.3V per millisecond
+  motor.PID_velocity.output_ramp = 1000;
+
+  // velocity low pass filtering
+  // default 5ms - try different values to see what is the best. 
+  // the lower the less filtered
+  motor.LPF_velocity.Tf = 0.005;
+
+  // angle PID controller
+  motor.P_angle.P = 2; 
+  motor.P_angle.I = 0;  // usually only P controller is enough 
+  motor.P_angle.D = 0;  // usually only P controller is enough 
+  motor.P_angle.output_ramp = 10000; // default 1e6 rad/s^2
+  //motor.LPF_angle.Tf = 0; // default 0
+
+  // setting the limits
+  motor.current_limit = 1; // Amps - default 0.2Amps
+
+  // commander.add('L', doLimit, "Motor Voltage Limit");
+  // commander.add('T', doTarget, "Velocity Target");
+  // commander.add('M',onMotion,"motion control");
+  commander.add('M', doMotor, "motor");
+  
+  motor.initFOC();
+
+  motor.target = 0.5;
+  motor.enable();
+
+  delay(500);
+
+  Serial.println("Motor Test Begin");
+}
+
+/////////////////////////////////////////////////////////////////////////
+void loop() { 
+
+  sensor.update();  // call as frequently as possible
+
+  // // Button Press ISR
+  // if(aux1.pressed){ 
+  //   aux1.pressed = false;
+  // }
+  
+  // // Turning motor on and off
+  // if(aux2.pressed){ 
+  //   aux2.pressed = false;
+  // }
+
+  // open loop velocity movement
+  // using motor.voltage_limit and motor.velocity_limit
+  // Basic motor movement
+  //motor.move(target_velocity);
+  
+  motor.loopFOC();
+
+  motor.move();
+
+  motor.monitor();
+
+  // user communication
+  commander.run();
+
+  //delay(5);
+}
+
+
+float readMagSensorCallback() {
   float angleCalculation = 0.0f;
   // Checks if mag channels are on - turns on in setup
   if((raw_sensor.getMagneticChannel() != 0) && (raw_sensor.getAngleEn() != 0)) { 
     angleCalculation = raw_sensor.getAngleResult();
-    Serial.print(angleCalculation, 2); Serial.print("\t");
+    //Serial.print(angleCalculation, 2); Serial.print("\t");
   }
   else {
     Serial.println("Mag Channels disabled, stopping..");
@@ -25,7 +230,7 @@ float readMySensorCallback() {
   return (angleCalculation * 3.141529 / 180.0);
 }
 
-void initMySensorCallback() {
+void initMagSensorCallback() {
 
   Wire.begin(); // for magnetic sensor
   
@@ -42,27 +247,4 @@ void initMySensorCallback() {
   raw_sensor.setConvAvg(conversionAverage);       // Set the device at 32x average mode 
   raw_sensor.setMagneticChannel(magneticChannel); // Set calculation plane
   raw_sensor.setAngleEn(angleCalculation);        // enable angle calculation
-}
-
-GenericSensor sensor = GenericSensor(readMySensorCallback, initMySensorCallback); // create the sensor
-
-void setup() { 
-
-  Serial.begin(115200); // monitoring port
-
-  sensor.init(); // initialize sensor hardware
-
-  Serial.println("My sensor ready");
-
-  delay(1000);
-}
-
-void loop() {
-
-  sensor.update();  // call as frequently as possible
-
-  Serial.print(sensor.getAngle());
-  Serial.print("\t");
-  Serial.println(sensor.getVelocity());
-
 }
