@@ -25,7 +25,7 @@ GenericSensor sensor = GenericSensor(readMagSensorCallback, initMagSensorCallbac
 #define wh19      19
 #define vl23      23
 #define wl33      33
-//#define _stby    5
+//#define _stby      5
 
 #define curr_U    35
 #define curr_V    36
@@ -49,7 +49,7 @@ void doMotor(char* cmd){ commander.motor(&motor, cmd); }
 //  - phA   - A phase adc pin
 //  - phB   - B phase adc pin
 //  - phC   - C phase adc pin (optional)
-InlineCurrentSense current_sense  = InlineCurrentSense(0.012, 20, curr_U, curr_V, curr_W);
+//InlineCurrentSense current_sense  = InlineCurrentSense(0.012, 20, curr_U, curr_V, curr_W);
 
 
 // //////////////////////motor demo stuff///////////////////////////
@@ -100,21 +100,22 @@ void setup() {
   driver.pwm_frequency = 20000;
   driver.voltage_limit = 3.3;
   driver.init();
-  current_sense.linkDriver(&driver);
+  //current_sense.linkDriver(&driver);
   motor.linkDriver(&driver);
-  motor.voltage_limit = 3.3;
+  motor.voltage_limit = 3.1;
   //motor.torque_controller = TorqueControlType::foc_current;
   motor.controller = MotionControlType::velocity;
   motor.init();
   motor.disable();
-  if (current_sense.init()) {
-    Serial.println("current sense init success.");
-  }
-  else {
-    Serial.println("current sense init fail. halting.");
-    while(1);
-  }
-  motor.linkCurrentSense(&current_sense);
+
+  // if (current_sense.init()) {
+  //   Serial.println("current sense init success.");
+  // }
+  // else {
+  //   Serial.println("current sense init fail. halting.");
+  //   while(1);
+  // }
+  // motor.linkCurrentSense(&current_sense);
 
 
   // pinMode(aux1.PIN, INPUT_PULLUP); // Sets pin 14 on the ESP32 as an interrupt
@@ -163,7 +164,7 @@ void setup() {
   motor.P_angle.I = 0;  // usually only P controller is enough 
   motor.P_angle.D = 0;  // usually only P controller is enough 
   motor.P_angle.output_ramp = 10000; // default 1e6 rad/s^2
-  //motor.LPF_angle.Tf = 0; // default 0
+  motor.LPF_angle.Tf = 0; // default 0
 
   // setting the limits
   motor.current_limit = 1; // Amps - default 0.2Amps
